@@ -100,13 +100,13 @@ sub correct {
 	
 	my @correct_results;
 	my $splitup = split //, $number;
-	foreach my $c ( splitup ) {
-		if ($c == 9) {
-			push @correct_results, has_valid_checksum( );
-		} elsif ($c == 0) {
-		} elsif ()
-		
-    }
+	#foreach my $c ( splitup ) {
+	#	if ($c == 9) {
+	#		push @correct_results, has_valid_checksum( );
+	#	} elsif ($c == 0) {
+	#	} elsif ()
+	#	
+    #}
     
     return $number;
 }
@@ -114,7 +114,7 @@ sub correct {
 sub try_correction {
 	 my ( $self, $number ) = @_;
 	 
-	 has_valid_checksum( join());
+	 #has_valid_checksum( join());
 	 
 	 return $number;
 }
