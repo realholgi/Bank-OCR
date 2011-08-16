@@ -8,13 +8,13 @@ our $VERSION = '1.0';
 Bank::OCR->run unless caller;
 
 sub run {
-	my $input;
-	 {
-         local $/ = undef;
-         $input = <>;
-     }
-    my $ocr = Bank::OCR->new();
-    say $ocr->to_string( $ocr->parse_multiple( $input ));
+	my $ocr = Bank::OCR->new();
+    my $input;
+    {
+        local $/ = undef;
+        $input = <>;
+    }
+    say $ocr->to_string( $ocr->parse_multiple($input) );
 }
 
 sub new {
@@ -32,14 +32,14 @@ sub validate {
     # 27 characters in first 3 lines and only space, | _ allowed
     foreach my $index ( 0 .. 2 ) {
         my $line = $lines[$index];
-        return ( "line $index length is " . length($line) . " but must be 27" ,  undef) if ( length($line) != 27 );
+        return ( "line $index length is " . length($line) . " but must be 27", undef ) if ( length($line) != 27 );
         return ( "line $index contains illegal characters", undef ) if ( $line !~ /^[\s_|]*$/ );
     }
 
     # last line only whitespace
     return ( 'last line not empty', undef ) if ( $#lines == 3 && $lines[3] !~ /^\s*$/ );
 
-    return ( '',  1);
+    return ( '', 1 );
 }
 
 sub parse {
@@ -67,11 +67,11 @@ sub parse {
         foreach my $l ( 0 .. 2 ) {
             $charPattern .= substr $lines[$l], $c * 3, 3;
         }
-        $res .= (defined $number_pattern{$charPattern})
-            		? $number_pattern{$charPattern}
-            		: '?';
+        $res .= ( defined $number_pattern{$charPattern} )
+					? $number_pattern{$charPattern}
+					: '?';
     }
-    return ( '', $res);
+    return ( '', $res );
 }
 
 sub has_valid_checksum {
@@ -90,45 +90,57 @@ sub has_valid_checksum {
 sub correct {
     my ( $self, $number ) = @_;
 
-    return unless $number && isdigit $number;
-
-	# 9 => 8
-	# 0 => 8
-	# 1 => 7
-	# 5 => 9
-	# 5 => 6
+    return unless defined $number && $number ne '';
+    return $number if has_valid_checksum($number);
+    if ($number =~ /\?{1}/) {
+        	my $try = $self->try_guessing_number($number);
+        	return $try if defined $try;
+    }
+    return $number unless isdigit $number;
 	
-	my @correct_results;
-	my $splitup = split //, $number;
-	#foreach my $c ( splitup ) {
-	#	if ($c == 9) {
-	#		push @correct_results, has_valid_checksum( );
-	#	} elsif ($c == 0) {
-	#	} elsif ()
-	#	
-    #}
-    
-    return $number;
+    my @results = ();
+    push @results, $self->do_try( $number, 9, 8 );
+    push @results, $self->do_try( $number, 3, 9 );
+    push @results, $self->do_try( $number, 1, 7 );
+	push @results, $self->do_try( $number, 5, 9 );
+	push @results, $self->do_try( $number, 5, 6 );
+    push @results, $self->do_try( $number, 0, 8 );
+    push @results, $self->do_try( $number, 8, 6 );
+	
+	return ( scalar @results == 1 ) ? $results[0] :  \@results; # '[ '. join(', ', map { "'$_'" } @results) . ' ]';
+}
+
+sub do_try {
+    my ( $self, $number, $search, $replace ) = @_;
+
+    return ( $self->try_correction( $number, $search,  $replace ), $self->try_correction( $number, $replace, $search ) );
 }
 
 sub try_correction {
-	 my ( $self, $number ) = @_;
-	 
-	 #has_valid_checksum( join());
-	 
-	 return $number;
+    my ( $self, $number, $search, $replace ) = @_;
+
+    my @results = ();
+    foreach my $idx ( 0 .. length($number) ) {
+        if ( substr( $number, $idx, 1 ) eq $search ) {
+            my $try = $number;
+            substr( $try, $idx, 1 ) = $replace;
+            push @results, $try if $self->has_valid_checksum($try);
+        }
+    }
+    return ( scalar @results == 1 ) ? $results[0] : @results;
 }
 
 sub checkmark {
     my ( $self, $number ) = @_;
 
-	return '' unless $number;
+    return '' unless $number;
+    return 'AMB' if ref $number;
+    
     my $checksum = $self->has_valid_checksum($number);
 
     return '' if $checksum;
     return 'ILL' unless ( defined $checksum );
-    
-    
+
     return 'ERR';
 }
 
@@ -141,9 +153,11 @@ sub parse_multiple {
     while (@lines) {
         my @block = splice( @lines, 0, 4 );
         my ( $error, $number ) = $self->parse(@block);
+        my $c_number = $self->correct( $number );
         my $part = {
-            account_number => $number,
-            checkmark      => $self->checkmark($number),
+            account_number => $c_number,
+            detected_number=> $number,
+            checkmark      => $self->checkmark($c_number),
             original       => join "\n", @block
         };
         $part->{error} = $error if ($error);
@@ -153,18 +167,30 @@ sub parse_multiple {
     return $res;
 }
 
+sub try_guessing_number {
+	 my ( $self, $number ) = @_;
+	 
+	 foreach my $c ( 0..9 ) {
+		my $try = $number;
+		$try =~ s/\?/$c/;
+		return $try if $self->has_valid_checksum($try);
+    }
+    return;
+}
+
 sub to_string {
     my ( $self, $obj ) = @_;
 
     return unless $obj;
 
-	my $res ='';
+    my $res = '';
     foreach my $account (@$obj) {
-    	if ($account->{account_number}) {
-    		$res .= "$account->{account_number} $account->{checkmark}\n";
-    	} else {
-    		$res .= "ERROR: $account->{error}\n";
-    	}
+        if ( $account->{account_number} ) {
+            $res .= "$account->{account_number} $account->{checkmark}\n";
+        }
+        else {
+            $res .= "ERROR: $account->{error}\n";
+        }
     }
     return $res;
 }
